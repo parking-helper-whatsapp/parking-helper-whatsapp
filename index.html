@@ -30,6 +30,26 @@
             margin-bottom: 6px;
             font-weight: 600;
         }
+        .autocomplete-list {
+            position: absolute;
+            width: 100%;
+            background: white;
+            border: 1px solid #ccc;
+            border-top: none;
+            max-height: 180px;
+            overflow-y: auto;
+            border-radius: 0 0 8px 8px;
+            z-index: 1000;
+        }
+        
+        .autocomplete-item {
+            padding: 10px;
+            cursor: pointer;
+        }
+        
+        .autocomplete-item:hover {
+            background: #f0f0f0;
+        }
         input[type="text"] {
             width: 100%;
             padding: 10px;
@@ -79,6 +99,7 @@
     <form id="lookupForm">
         <label for="plateInput">Blocked license plate:</label>
         <input type="text" id="plateInput" placeholder="Example: 12-345-67" required>
+        <div id="autocomplete" class="autocomplete-list" style="display:none;"></div>
 
         <button type="submit" id="sendBtn" disabled>Open WhatsApp</button>
     </form>
@@ -89,6 +110,29 @@
 <script>
     
     const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtm-4USJaNYZhmIAUagZdyXGt3tBQxCw5xofX1slhcSXF0RlG8v-2O8iNL1T2FpxeqjMi0GjY2otef/pub?gid=0&single=true&output=csv";
+
+    function showAutocomplete(matches) {
+        const box = document.getElementById("autocomplete");
+        if (matches.length === 0) {
+            box.style.display = "none";
+            return;
+        }
+    
+        box.innerHTML = "";
+    
+        matches.forEach(p => {
+            const item = document.createElement("div");
+            item.className = "autocomplete-item";
+            item.textContent = p.plateRaw;
+            item.onclick = () => {
+                plateInput.value = p.plateRaw;
+                box.style.display = "none";
+            };
+            box.appendChild(item);
+        });
+    
+        box.style.display = "block";
+    }
 
     const statusEl = document.getElementById("status");
     const sendBtn = document.getElementById("sendBtn");
@@ -216,8 +260,24 @@
         window.open(url, "_blank");
     });
 
+    document.addEventListener("click", (e) => {
+        if (!e.target.closest("#autocomplete") && e.target !== plateInput) {
+            document.getElementById("autocomplete").style.display = "none";
+        }
+    });
     // Load data on page load
     loadData();
+    plateInput.addEventListener("input", () => {
+        const text = normalizePlate(plateInput.value);
+        if (!text || people.length === 0) {
+            showAutocomplete([]);
+            return;
+        }
+    
+        const matches = people.filter(p => p.plateNorm.startsWith(text));
+    
+        showAutocomplete(matches.slice(0, 10)); // limit to 10 suggestions
+    });
 </script>
 
 </body>
