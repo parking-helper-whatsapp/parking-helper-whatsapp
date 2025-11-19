@@ -1,6 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta charset="UTF-8">
     <title>Parking WhatsApp Helper</title>
     <style>
@@ -83,10 +84,6 @@
     </form>
 
     <div id="status" class="status"></div>
-    <div class="small">
-        Data source: Google Sheet (Name, Plate, Phone).<br>
-        WhatsApp message: <code>"Hey, I blocked you. If you need to go, call me."</code>
-    </div>
 </div>
 
 <script>
@@ -206,7 +203,7 @@
 
         setStatus("Found: " + person.name + " (" + person.plateRaw + ")", "ok");
 
-        const message = `Hey, I blocked you. If you need to go, call me.`;
+        const message = `היי, חסמתי אותך בחניה. אם אתה צריך לצאת תתקשר אליי`;
         const encodedMessage = encodeURIComponent(message);
         const phone = person.phoneNorm;
 
