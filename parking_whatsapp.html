@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Parking WhatsApp Helper</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            background: #f4f4f4;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 480px;
+            margin: 40px auto;
+            background: white;
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+        }
+        h1 {
+            font-size: 1.3rem;
+            margin-top: 0;
+            margin-bottom: 12px;
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-weight: 600;
+        }
+        input[type="text"] {
+            width: 100%;
+            padding: 10px;
+            font-size: 1rem;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+            box-sizing: border-box;
+            margin-bottom: 12px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            font-size: 1rem;
+            border-radius: 8px;
+            border: none;
+            cursor: pointer;
+            background: #25D366;
+            color: white;
+            font-weight: 600;
+        }
+        button:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .status {
+            margin-top: 10px;
+            font-size: 0.9rem;
+            min-height: 1.2em;
+        }
+        .status.error {
+            color: #c0392b;
+        }
+        .status.ok {
+            color: #2ecc71;
+        }
+        .small {
+            font-size: 0.8rem;
+            color: #777;
+            margin-top: 8px;
+        }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>Parking WhatsApp Helper</h1>
+
+    <form id="lookupForm">
+        <label for="plateInput">Blocked license plate:</label>
+        <input type="text" id="plateInput" placeholder="Example: 12-345-67" required>
+
+        <button type="submit" id="sendBtn" disabled>Open WhatsApp</button>
+    </form>
+
+    <div id="status" class="status"></div>
+    <div class="small">
+        Data source: Google Sheet (Name, Plate, Phone).<br>
+        WhatsApp message: <code>"Hey, I blocked you. If you need to go, call me."</code>
+    </div>
+</div>
+
+<script>
+    
+    const CSV_URL = "https://docs.google.com/spreadsheets/d/e/2PACX-1vRtm-4USJaNYZhmIAUagZdyXGt3tBQxCw5xofX1slhcSXF0RlG8v-2O8iNL1T2FpxeqjMi0GjY2otef/pub?gid=0&single=true&output=csv";
+
+    const statusEl = document.getElementById("status");
+    const sendBtn = document.getElementById("sendBtn");
+    const plateInput = document.getElementById("plateInput");
+
+    let people = [];
+
+    function setStatus(msg, type = "") {
+        statusEl.textContent = msg;
+        statusEl.className = "status " + (type || "");
+    }
+
+    // Normalize plate: remove spaces, dashes, make uppercase
+    function normalizePlate(plate) {
+        if (!plate) return "";
+        return plate.replace(/[\s\-]/g, "").toUpperCase();
+    }
+
+    // Normalize phone for WhatsApp Web
+    // Assumes Israel by default: 05xxxxxxxx -> 9725xxxxxxxx
+    function normalizePhone(phone) {
+        if (!phone) return "";
+        // remove everything except digits
+        let p = phone.replace(/[^0-9]/g, "");
+
+        // If starts with "00" or country code already, keep as is
+        // If starts with single "0" assume Israel and convert
+        if (p.startsWith("0") && !p.startsWith("00")) {
+            // Example: 0501234567 -> 972501234567
+            p = "972" + p.slice(1);
+        }
+
+        return p;
+    }
+
+    // Very simple CSV parser for Name,Plate,Phone
+    function parseCsv(text) {
+        const lines = text.trim().split(/\r?\n/);
+        if (lines.length <= 1) return [];
+
+        // Assume first line is header
+        const header = lines[0].split(",").map(h => h.trim().toLowerCase());
+        const nameIndex = header.indexOf("name");
+        const plateIndex = header.indexOf("plate");
+        const phoneIndex = header.indexOf("phone");
+
+        if (nameIndex === -1 || plateIndex === -1 || phoneIndex === -1) {
+            throw new Error("Header must have Name, Plate, Phone");
+        }
+
+        const result = [];
+        for (let i = 1; i < lines.length; i++) {
+            if (!lines[i].trim()) continue;
+            const parts = lines[i].split(",");
+            const name = (parts[nameIndex] || "").trim();
+            const plate = (parts[plateIndex] || "").trim();
+            const phone = (parts[phoneIndex] || "").trim();
+            if (!plate || !phone) continue;
+            result.push({
+                name: name,
+                plateRaw: plate,
+                plateNorm: normalizePlate(plate),
+                phoneRaw: phone,
+                phoneNorm: normalizePhone(phone)
+            });
+        }
+        return result;
+    }
+
+    async function loadData() {
+        try {
+            setStatus("Loading data from Google Sheets...");
+            const resp = await fetch(CSV_URL);
+            if (!resp.ok) {
+                throw new Error("HTTP " + resp.status);
+            }
+            const text = await resp.text();
+            people = parseCsv(text);
+            if (people.length === 0) {
+                throw new Error("No rows found in CSV");
+            }
+            setStatus("Data loaded. " + people.length + " cars in the list.", "ok");
+            sendBtn.disabled = false;
+        } catch (err) {
+            console.error(err);
+            setStatus("Error loading CSV: " + err.message, "error");
+            sendBtn.disabled = true;
+        }
+    }
+
+    document.getElementById("lookupForm").addEventListener("submit", function (e) {
+        e.preventDefault();
+        const inputPlate = plateInput.value;
+        const norm = normalizePlate(inputPlate);
+
+        if (!norm) {
+            setStatus("Please type a license plate.", "error");
+            return;
+        }
+
+        if (!people || people.length === 0) {
+            setStatus("Data not loaded yet.", "error");
+            return;
+        }
+
+        const person = people.find(p => p.plateNorm === norm);
+
+        if (!person) {
+            setStatus("No match found for plate: " + inputPlate, "error");
+            return;
+        }
+
+        setStatus("Found: " + person.name + " (" + person.plateRaw + ")", "ok");
+
+        const message = `Hey, I blocked you. If you need to go, call me.`;
+        const encodedMessage = encodeURIComponent(message);
+        const phone = person.phoneNorm;
+
+        if (!phone) {
+            setStatus("Found plate but phone number is invalid for: " + person.name, "error");
+            return;
+        }
+
+        const url = `https://wa.me/${phone}?text=${encodedMessage}`;
+        window.open(url, "_blank");
+    });
+
+    // Load data on page load
+    loadData();
+</script>
+
+</body>
+</html>
+
